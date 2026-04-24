@@ -1,8 +1,8 @@
+<img src="https://plain-apac-prod-public.komododecks.com/202604/23/KVDPGqHxpZk38VsRrw63/image.png" width="48" />
+
 # NextFlow
 
-NextFlow is a high-fidelity, node-based AI workflow editor inspired by state-of-the-art creative platforms. It enables users to build complex, parallel directed acyclic graphs (DAGs) for multimodal AI processing, combining large language models with advanced image and video processing utilities.
-
-![NextFlow Logo](https://plain-apac-prod-public.komododecks.com/202604/23/KVDPGqHxpZk38VsRrw63/image.png)
+NextFlow is a high-fidelity, node-based AI workflow editor designed for complex multimodal processing. It allows for the construction of parallel directed acyclic graphs (DAGs) that bridge large language models with specialized image and video processing tasks.
 
 ---
 

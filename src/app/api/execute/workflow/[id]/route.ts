@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId: clerkId } = await auth();
@@ -10,7 +8,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
 
-  const user = await prisma.user.findUnique({ where: { clerkId } });
+  const user = await prisma.user.findUnique({ where: { id: clerkId } });
   if (!user) return new NextResponse("User not found", { status: 404 });
 
   const workflow = await prisma.workflow.findUnique({

@@ -33,7 +33,20 @@ A premium, dark-mode focused interface featuring:
 
 ## Project Demo
 
-[Insert Demo Video Link Here]
+[Watch the Demo Video](https://drive.google.com/file/d/1col3Fhx-RZP7ritsh9lO8nBvHUyhwIYv/view?usp=sharing)
+
+## Screenshots
+
+### Dashboard
+![Dashboard Dark](./public/screenshots/dashboard-dark.png)
+![Dashboard Light](./public/screenshots/dashboard-light.png)
+
+### Workflow Presets
+![Presets Dark](./public/screenshots/presets-dark.png)
+![Presets Light](./public/screenshots/presets-light.png)
+
+### Node Canvas
+![Canvas Editor](./public/screenshots/canvas-editor.png)
 
 ---
 

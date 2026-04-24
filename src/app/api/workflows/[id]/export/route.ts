@@ -8,7 +8,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { userId: clerkId } = await auth();
   if (!clerkId) return new NextResponse("Unauthorized", { status: 401 });
 
-  const user = await prisma.user.findUnique({ where: { clerkId } });
+  const user = await prisma.user.findUnique({ where: { id: clerkId } });
   if (!user) return new NextResponse("User not found", { status: 404 });
 
   const { id } = await params;

@@ -8,7 +8,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ workflow
   const { userId } = await auth();
   if (!userId) return new NextResponse("Unauthorized", { status: 401 });
 
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
+  const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) return new NextResponse("User Not Found", { status: 404 });
 
   const resolvedParams = await Promise.resolve(params);

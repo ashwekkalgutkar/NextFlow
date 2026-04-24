@@ -9,9 +9,9 @@ export async function POST(req: Request) {
   if (!clerkId) return new NextResponse("Unauthorized", { status: 401 });
 
   const user = await prisma.user.upsert({
-    where: { clerkId },
+    where: { id: clerkId },
     update: {},
-    create: { clerkId }
+    create: { id: clerkId }
   });
 
   try {

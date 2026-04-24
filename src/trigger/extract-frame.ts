@@ -2,10 +2,8 @@ import { task } from '@trigger.dev/sdk/v3';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { PrismaClient } from '@prisma/client';
-import Transloadit from 'transloadit';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
+import { Transloadit } from 'transloadit';
 
 export const extractFrameTask = task({
   id: 'extract-frame',

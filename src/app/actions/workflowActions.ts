@@ -95,7 +95,11 @@ export async function deleteWorkflow(id: string) {
 export async function fetchHistory(workflowId: string) {
   try {
     return await prisma.nodeRun.findMany({
-      where: { workflowId },
+      where: { 
+        workflowRun: {
+          workflowId
+        }
+      },
       orderBy: { createdAt: 'desc' },
       take: 50
     });

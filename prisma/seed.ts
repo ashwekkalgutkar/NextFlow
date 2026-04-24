@@ -7,10 +7,10 @@ async function main() {
 
   // Create a demo user if doesn't exist
   const user = await prisma.user.upsert({
-    where: { clerkId: 'demo_clerk_id' },
+    where: { id: 'demo_clerk_id' },
     update: {},
     create: {
-      clerkId: 'demo_clerk_id',
+      id: 'demo_clerk_id',
     },
   })
 

@@ -1,9 +1,7 @@
 "use client";
 
-import React, { memo } from 'react';
+import React from 'react';
 import { cn } from '@/lib/utils';
-import { useWorkflowStore } from '@/store/workflowStore';
-import { motion } from 'framer-motion';
 
 interface BaseNodeProps {
   id: string;
@@ -12,53 +10,53 @@ interface BaseNodeProps {
   children: React.ReactNode;
   selected?: boolean;
   className?: string;
+  accentColor?: string;
+  isRunning?: boolean;
   headerRight?: React.ReactNode;
 }
 
-export const BaseNode = memo(({
-  id,
-  title,
-  icon,
-  children,
-  selected,
-  className,
-  headerRight
-}: BaseNodeProps) => {
-  const { runningNodes } = useWorkflowStore();
-  const isRunning = runningNodes.has(id);
-
+export function BaseNode({ 
+  id, 
+  title, 
+  icon, 
+  children, 
+  selected, 
+  className, 
+  accentColor,
+  isRunning,
+  headerRight 
+}: BaseNodeProps) {
   return (
-    <motion.div 
+    <div 
       className={cn(
-        "krea-node min-w-[180px] overflow-visible relative transition-all duration-200",
-        selected ? "ring-1 ring-[#A855F7] border-[#A855F7]" : "border-[#ffffff1a]",
+        "krea-node transition-all duration-200",
+        selected && "selected",
+        isRunning && "running",
         className
       )}
-      initial={false}
-      animate={isRunning ? { boxShadow: '0 0 15px rgba(168, 85, 247, 0.3)' } : { boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
+      style={{ '--accent-color': accentColor } as any}
     >
-      {/* Node Header - Compact */}
-      <div 
-        className="flex items-center justify-between px-2.5 py-1.5 border-b border-[#ffffff0d]"
-        style={{ 
-          background: 'rgba(25, 25, 25, 0.8)',
-          backdropFilter: 'blur(10px)',
-          borderRadius: '11px 11px 0 0'
-        }}
-      >
-        <div className="flex items-center gap-1.5">
-          {icon && <div className="shrink-0">{icon}</div>}
-          <span className="text-[11px] font-medium text-[#e0e0e0] tracking-tight">{title}</span>
+      {/* Sleek Krea Header */}
+      <div className="node-header">
+        <div className="flex items-center gap-2">
+          {icon && <div className="flex items-center justify-center opacity-70">{icon}</div>}
+          <span className="node-title">{title}</span>
         </div>
-        {headerRight && <div className="flex items-center">{headerRight}</div>}
+        {headerRight}
       </div>
 
-      {/* Node Body */}
-      <div className="node-body p-0 overflow-hidden rounded-b-[11px]">
+      {/* Node Content */}
+      <div className="node-body relative">
         {children}
       </div>
-    </motion.div>
-  );
-});
 
-BaseNode.displayName = "BaseNode";
+      {/* Selection Indicator (Bottom accent) */}
+      {selected && accentColor && (
+        <div 
+          className="absolute -bottom-[1px] left-3 right-3 h-[1px] opacity-50 blur-[1px]" 
+          style={{ backgroundColor: accentColor }} 
+        />
+      )}
+    </div>
+  );
+}

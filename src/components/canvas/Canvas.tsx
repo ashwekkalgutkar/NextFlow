@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useCallback, useRef, useState } from 'react';
+import NewWorkflowOverlay from '@/components/canvas/NewWorkflowOverlay';
 import { 
   ReactFlow, 
-  MiniMap, 
   Background, 
   Controls, 
   BackgroundVariant, 
@@ -22,12 +22,14 @@ import { ImageUploadNode, VideoUploadNode } from '@/components/nodes/UploadNodes
 import { CropImageNode, ExtractFrameNode } from '@/components/nodes/ProcessingNodes';
 import { validateEdge } from '@/lib/validations';
 import PresetsModal from '@/components/common/PresetsModal';
+import { executeParallelDAG } from '@/lib/executionEngine';
+import { executeNodeAction } from '@/lib/executeNode';
 
 /* Custom Overlay Icons */
 import { 
   MousePointer2, Hand, Scissors, Grid3X3, ArrowRightLeft, Plus, 
   Undo2, Redo2, Moon, Sun, Share, Wand2, ChevronDown, X, Folder,
-  Search, Image as ImageIcon, ChevronRight, Video, Type, Bot, Film
+  Search, Image as ImageIcon, ChevronRight, Video, Type, Bot, Film, Play
 } from 'lucide-react';
 import { useTheme } from '@/components/ui/ThemeProvider';
 
@@ -41,19 +43,24 @@ const nodeTypes = {
 };
 
 function CanvasInner({ workflowId }: { workflowId: string }) {
-  const { nodes, edges, onNodesChange, onEdgesChange, addEdge, addNode, loadWorkflow, saveCurrentWorkflow, renameWorkflow, getWorkflowName } = useWorkflowStore();
+  const { nodes, edges, onNodesChange, onEdgesChange, addEdge, addNode, loadWorkflow, saveCurrentWorkflow, renameWorkflow, getWorkflowName, setActiveWorkflowId, setNodes, setEdges } = useWorkflowStore();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
   const { theme, toggle: toggleTheme } = useTheme();
   const [showPresetsModal, setShowPresetsModal] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showNodeMenu, setShowNodeMenu] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
   
   // Hydration fix for store values
   const [mounted, setMounted] = useState(false);
+  
+  const generateId = useCallback((prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 11)}-${Date.now().toString(36)}`, []);
+
   React.useEffect(() => {
     setMounted(true);
-  }, []);
+    if (nodes.length > 0) setShowSplash(false);
+  }, [nodes]);
 
   // Inline title editing
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -74,21 +81,39 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
     }
   };
 
+  const handleRunSelected = () => {
+    const nodeIds = new Set(selectedNodes.map(n => n.id));
+    const edgesToRun = edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+    executeParallelDAG(selectedNodes, edgesToRun, (node) => executeNodeAction(node, workflowId));
+  };
+
+  const handleRunAll = () => {
+    executeParallelDAG(nodes, edges, (node) => executeNodeAction(node, workflowId));
+  };
+
   // Load workflow on mount
   React.useEffect(() => {
     if (workflowId) {
-      loadWorkflow(workflowId);
+      setActiveWorkflowId(workflowId);
+      loadWorkflow(workflowId).then((loaded: any) => {
+        // If we loaded something with content, hide splash. Otherwise, show it.
+        if (loaded && loaded.nodes && loaded.nodes.length > 0) {
+          setShowSplash(false);
+        } else {
+          setShowSplash(true);
+        }
+      });
     }
-  }, [workflowId, loadWorkflow]);
+  }, [workflowId, loadWorkflow, setActiveWorkflowId]);
 
   // Debounced auto-save when components change
   React.useEffect(() => {
-    if (!workflowId) return;
+    if (!workflowId || showSplash) return;
     const timeout = setTimeout(() => {
       saveCurrentWorkflow(workflowId);
     }, 1500);
     return () => clearTimeout(timeout);
-  }, [nodes, edges, workflowId, saveCurrentWorkflow]);
+  }, [nodes, edges, workflowId, saveCurrentWorkflow, showSplash]);
 
   const isValidConnection = useCallback(
     (connection: Connection | Edge) => {
@@ -111,12 +136,20 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
 
       if (hasCycle(targetNode)) return false;
 
-      // Verify connection via Zod schema
-      const sourceNode = nodes.find((node) => node.id === connection.source);
-      if (!sourceNode || !connection.targetHandle) return false;
+      // Handle type matching
+      const sourceHandleId = connection.sourceHandle;
+      const targetHandleId = connection.targetHandle;
+      if (!sourceHandleId || !targetHandleId) return false;
       
-      const isValidType = validateEdge(sourceNode.type || '', connection.targetHandle);
-      if (!isValidType) return false;
+      const sourceType = (sourceHandleId.includes('image') || sourceHandleId === 'images') ? 'image' 
+                       : sourceHandleId.includes('video') ? 'video' 
+                       : 'text';
+                       
+      const targetType = (targetHandleId.includes('image') || targetHandleId === 'images') ? 'image'
+                       : targetHandleId.includes('video') ? 'video'
+                       : 'text';
+                       
+      if (sourceType !== targetType) return false;
 
       return true;
     },
@@ -124,11 +157,15 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
   );
 
   const onConnect = useCallback((connection: Connection) => {
+    let edgeClass = 'edge-text';
+    if (connection.sourceHandle?.includes('image')) edgeClass = 'edge-image';
+    else if (connection.sourceHandle?.includes('video')) edgeClass = 'edge-video';
+
     addEdge({ 
       ...connection, 
-      id: `e-${connection.source}-${connection.target}`, 
-      animated: true, 
-      className: 'animated custom-edge' 
+      id: `e-${connection.source}-${connection.target}-${Math.random().toString(36).slice(2, 7)}`, 
+      animated: false, 
+      className: edgeClass 
     } as Edge);
   }, [addEdge]);
 
@@ -158,14 +195,143 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
+  const handleSelectPreset = useCallback((presetId: string) => {
+    setShowSplash(false);
+    
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+
+    if (presetId === 'empty') {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+
+    if (presetId === 'image-generator') {
+      const id1 = generateId('text');
+      const id2 = generateId('llm');
+      
+      setNodes([
+        { 
+          id: id1, 
+          type: 'textNode', 
+          position: { x: centerX - 300, y: centerY - 100 }, 
+          data: { label: 'PROMPT', text: 'A futuristic city at sunset, cinematic lighting, highly detailed' } 
+        },
+        { 
+          id: id2, 
+          type: 'llmNode', 
+          position: { x: centerX + 50, y: centerY - 150 }, 
+          data: { label: 'ENHANCER', model: 'gemini-2.0-flash-exp' } 
+        }
+      ]);
+      setEdges([
+        { id: `e-${id1}-${id2}`, source: id1, target: id2, sourceHandle: 'text', targetHandle: 'user_message', className: 'edge-text' }
+      ]);
+    } else if (presetId === 'video-generator') {
+      const id1 = generateId('text');
+      const id2 = generateId('llm');
+      
+      setNodes([
+        { 
+          id: id1, 
+          type: 'textNode', 
+          position: { x: centerX - 300, y: centerY - 100 }, 
+          data: { label: 'SCENE DESCRIPTION', text: 'A golden retriever puppy running through a field of flowers' } 
+        },
+        { 
+          id: id2, 
+          type: 'llmNode', 
+          position: { x: centerX + 50, y: centerY - 150 }, 
+          data: { label: 'VIDEO PROMPT', model: 'gemini-2.0-flash-exp' } 
+        }
+      ]);
+      setEdges([
+        { id: `e-${id1}-${id2}`, source: id1, target: id2, sourceHandle: 'text', targetHandle: 'user_message', className: 'edge-text' }
+      ]);
+    } else if (presetId === 'upscaling-enhancer') {
+      const id1 = generateId('upload');
+      const id2 = generateId('crop');
+      
+      setNodes([
+        { 
+          id: id1, 
+          type: 'imageUploadNode', 
+          position: { x: centerX - 300, y: centerY - 100 }, 
+          data: { label: 'INPUT IMAGE' } 
+        },
+        { 
+          id: id2, 
+          type: 'cropImageNode', 
+          position: { x: centerX + 50, y: centerY - 150 }, 
+          data: { label: 'ENHANCE & CROP' } 
+        }
+      ]);
+      setEdges([
+        { id: `e-${id1}-${id2}`, source: id1, target: id2, sourceHandle: 'image_url', targetHandle: 'image_url', className: 'edge-image' }
+      ]);
+    } else if (presetId === 'llm-captioning') {
+      const id1 = generateId('upload');
+      const id2 = generateId('llm');
+      
+      setNodes([
+        { 
+          id: id1, 
+          type: 'imageUploadNode', 
+          position: { x: centerX - 300, y: centerY - 100 }, 
+          data: { label: 'SOURCE IMAGE' } 
+        },
+        { 
+          id: id2, 
+          type: 'llmNode', 
+          position: { x: centerX + 50, y: centerY - 150 }, 
+          data: { label: 'CAPTIONER', systemPrompt: 'Describe this image in detail for an accessibility caption.' } 
+        }
+      ]);
+      setEdges([
+        { id: `e-${id1}-${id2}`, source: id1, target: id2, sourceHandle: 'image_url', targetHandle: 'images', className: 'edge-image' }
+      ]);
+    }
+  }, [setNodes, setEdges]);
+
+  const selectedNodes = nodes.filter(n => n.selected);
+  const showMultiSelectToolbar = selectedNodes.length >= 2;
+
+  // Calculate toolbar position (average of selected nodes positions)
+  let toolbarX = 0;
+  let toolbarY = 0;
+  if (showMultiSelectToolbar) {
+    const minX = Math.min(...selectedNodes.map(n => n.position.x));
+    const maxX = Math.max(...selectedNodes.map(n => n.position.x + (n.measured?.width || 200)));
+    const minY = Math.min(...selectedNodes.map(n => n.position.y));
+    
+    // Position slightly above the highest node
+    toolbarX = (minX + maxX) / 2;
+    toolbarY = minY - 60;
+  }
+
+  // Transform coordinates to screen space
+  const { getViewport } = useReactFlow();
+  const { x, y, zoom } = getViewport();
+  const screenX = toolbarX * zoom + x;
+  const screenY = toolbarY * zoom + y;
+
   return (
-    <div className="w-full h-full relative" ref={reactFlowWrapper}>
+    <div className="w-full h-full relative" ref={reactFlowWrapper} style={{ backgroundColor: 'var(--canvas-bg)' }}>
+      {/* Splash Experience */}
+      {showSplash && mounted && (
+        <NewWorkflowOverlay 
+          onSelect={handleSelectPreset} 
+          onDismiss={() => setShowSplash(false)} 
+        />
+      )}
+      
       {/* Presets modal — opened via toolbar button */}
       <PresetsModal
         open={showPresetsModal}
         onClose={() => setShowPresetsModal(false)}
-        onSelectPreset={() => setShowPresetsModal(false)}
-        onSelectEmpty={() => setShowPresetsModal(false)}
+        onSelectPreset={(p) => handleSelectPreset(p.id)}
+        onSelectEmpty={() => handleSelectPreset('empty')}
       />
       <ReactFlow
         nodes={nodes}
@@ -181,26 +347,31 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
         deleteKeyCode={['Backspace', 'Delete']}
         multiSelectionKeyCode={['Shift']}
         selectionKeyCode={['Shift']}
+        style={{ background: 'var(--canvas-bg)' }}
       >
         <Background 
           variant={BackgroundVariant.Dots} 
-          gap={24} 
+          gap={32} 
           size={1} 
           color="var(--canvas-dot-color)" 
-          style={{ backgroundColor: 'transparent' }} 
         />
+        
         
         {/* Top Navigation Overlay */}
         <div className="absolute top-4 left-14 md:left-4 right-4 z-50 flex justify-between items-start pointer-events-none">
            {/* Left side nav */}
-           <div className="flex items-center gap-2 pointer-events-auto">
-             {/* Logo button */}
-             <button
-               className="w-7 h-7 rounded-[6px] flex items-center justify-center transition-colors shadow-sm"
-               style={{ background: 'var(--bg-node)', border: '1px solid var(--border-node)' }}
-             >
-               <span className="font-bold text-[12px] text-white">K</span>
-             </button>
+            <div className="flex items-center gap-2 pointer-events-auto">
+              {/* Logo button */}
+              <button
+                className="w-7 h-7 rounded-[6px] flex items-center justify-center transition-colors shadow-sm overflow-hidden"
+                style={{ background: 'var(--bg-node)', border: '1px solid var(--border-node)' }}
+              >
+                <img 
+                  src={theme === 'dark' ? "https://plain-apac-prod-public.komododecks.com/202604/23/KVDPGqHxpZk38VsRrw63/image.png" : "https://plain-apac-prod-public.komododecks.com/202604/23/TsmJGprgy6IEM9moJhsX/image.png"} 
+                  alt="L" 
+                  className="w-5 h-5 object-contain" 
+                />
+              </button>
 
              <div
                className="h-7 px-2 rounded-[6px] flex items-center gap-1.5 transition-colors cursor-text group"
@@ -260,6 +431,14 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
                 <span className="text-[13px] font-semibold" style={{ color: 'var(--btn-text)' }}>Turn workflow into app</span>
               </button>
               <button
+                onClick={handleRunAll}
+                className="h-9 px-4 rounded-[8px] flex items-center gap-2 transition-colors shadow hover:opacity-90"
+                style={{ background: '#1a73e8', color: '#ffffff' }}
+              >
+                <Play size={14} strokeWidth={2} fill="currentColor" />
+                <span className="text-[13px] font-bold">Run All</span>
+              </button>
+              <button
                 className="w-9 h-9 rounded-[8px] flex items-center justify-center shadow overflow-hidden"
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--btn-border)' }}
               >
@@ -276,6 +455,33 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
               Double click, right click, or press
               <kbd className="text-[11px] font-mono rounded-[4px] px-1.5 py-0.5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-mid)', color: 'var(--text-primary)' }}>N</kbd>
             </span>
+          </div>
+        )}
+
+        {/* Multi-Select Toolbar */}
+        {showMultiSelectToolbar && (
+          <div 
+            className="absolute z-50 flex items-center gap-2 p-1.5 rounded-[12px] shadow-2xl transition-all"
+            style={{ 
+              background: '#1a1a1a', 
+              border: '1px solid #333',
+              left: Math.max(20, Math.min(window.innerWidth - 300, screenX)),
+              top: Math.max(80, screenY),
+              transform: 'translate(-50%, -100%)'
+            }}
+          >
+            <button onClick={handleRunSelected} className="flex items-center gap-1.5 bg-[#1a73e8] hover:bg-[#1557b0] text-white px-3 py-1.5 rounded-[8px] text-[12px] font-medium transition-colors">
+              <Play size={12} fill="currentColor" />
+              Run nodes
+            </button>
+            <div className="w-[1px] h-[16px] bg-[#333]" />
+            <button className="flex items-center gap-1.5 hover:bg-[#2c2c2c] text-[#ccc] hover:text-white px-2.5 py-1.5 rounded-[8px] text-[12px] font-medium transition-colors">
+              Group
+            </button>
+            <button className="flex items-center gap-1.5 hover:bg-[#2c2c2c] text-[#ccc] hover:text-white px-2.5 py-1.5 rounded-[8px] text-[12px] font-medium transition-colors">
+              <Grid3X3 size={12} />
+              Tidy Up
+            </button>
           </div>
         )}
 
@@ -428,22 +634,22 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
               
               <div className="w-[1px] h-[24px] bg-[#333] mx-1"></div>
               
-              <button onClick={() => addNode({ id: `textNode-${crypto.randomUUID().slice(0, 8)}`, type: 'textNode', position: { x: window.innerWidth/2 - 100, y: window.innerHeight/2 - 100 }, data: { label: 'TEXT' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Add Text">
+              <button onClick={() => addNode({ id: generateId('text'), type: 'textNode', position: { x: window.innerWidth/2 - 100, y: window.innerHeight/2 - 100 }, data: { label: 'TEXT' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Add Text">
                 <Type size={18} strokeWidth={2} />
               </button>
-              <button onClick={() => addNode({ id: `imageUploadNode-${crypto.randomUUID().slice(0, 8)}`, type: 'imageUploadNode', position: { x: window.innerWidth/2 - 50, y: window.innerHeight/2 - 100 }, data: { label: 'UPLOAD IMAGE' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Upload Image">
+              <button onClick={() => addNode({ id: generateId('imageUpload'), type: 'imageUploadNode', position: { x: window.innerWidth/2 - 50, y: window.innerHeight/2 - 100 }, data: { label: 'UPLOAD IMAGE' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Upload Image">
                 <ImageIcon size={18} strokeWidth={2} />
               </button>
-              <button onClick={() => addNode({ id: `videoUploadNode-${crypto.randomUUID().slice(0, 8)}`, type: 'videoUploadNode', position: { x: window.innerWidth/2, y: window.innerHeight/2 - 100 }, data: { label: 'UPLOAD VIDEO' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Upload Video">
+              <button onClick={() => addNode({ id: generateId('videoUpload'), type: 'videoUploadNode', position: { x: window.innerWidth/2, y: window.innerHeight/2 - 100 }, data: { label: 'UPLOAD VIDEO' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Upload Video">
                 <Video size={18} strokeWidth={2} />
               </button>
-              <button onClick={() => addNode({ id: `llmNode-${crypto.randomUUID().slice(0, 8)}`, type: 'llmNode', position: { x: window.innerWidth/2 + 50, y: window.innerHeight/2 - 100 }, data: { label: 'LLM' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Add LLM">
+              <button onClick={() => addNode({ id: generateId('llm'), type: 'llmNode', position: { x: window.innerWidth/2 + 50, y: window.innerHeight/2 - 100 }, data: { label: 'LLM' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Add LLM">
                 <Bot size={18} strokeWidth={2} />
               </button>
-              <button onClick={() => addNode({ id: `cropImageNode-${crypto.randomUUID().slice(0, 8)}`, type: 'cropImageNode', position: { x: window.innerWidth/2 + 100, y: window.innerHeight/2 - 100 }, data: { label: 'CROP IMAGE' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Add Crop">
+              <button onClick={() => addNode({ id: generateId('crop'), type: 'cropImageNode', position: { x: window.innerWidth/2 + 100, y: window.innerHeight/2 - 100 }, data: { label: 'CROP IMAGE' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Add Crop">
                 <Scissors size={18} strokeWidth={2} />
               </button>
-              <button onClick={() => addNode({ id: `extractFrameNode-${crypto.randomUUID().slice(0, 8)}`, type: 'extractFrameNode', position: { x: window.innerWidth/2 + 150, y: window.innerHeight/2 - 100 }, data: { label: 'EXTRACT FRAME' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Add Extract Frame">
+              <button onClick={() => addNode({ id: generateId('extract'), type: 'extractFrameNode', position: { x: window.innerWidth/2 + 150, y: window.innerHeight/2 - 100 }, data: { label: 'EXTRACT FRAME' } })} className="w-10 h-10 rounded-[12px] hover:bg-[var(--bg-elevated)] flex items-center justify-center transition-colors" style={{ color: 'var(--text-dim)' }} title="Add Extract Frame">
                 <Film size={18} strokeWidth={2} />
               </button>
 
@@ -471,16 +677,8 @@ function CanvasInner({ workflowId }: { workflowId: string }) {
               </div>
            </div>
 
-           {/* Right Bottom Logo */}
-           <div className="pointer-events-auto">
-             <button
-               className="w-12 h-12 rounded-full flex items-center justify-center hover:scale-105 transition-all shadow-xl"
-               style={{ background: 'var(--btn-bg)', border: '1px solid var(--btn-border)' }}
-             >
-               <img src="https://s.krea.ai/browser-logo.png" alt="k" className="w-[22px] h-[22px] opacity-70 filter brightness-200" onError={(e) => { e.currentTarget.style.display='none'; (e.currentTarget.nextElementSibling as HTMLElement)?.classList.remove('hidden') }} />
-               <span className="hidden font-bold text-[18px]" style={{ color: 'var(--text-primary)' }}>K</span>
-             </button>
-           </div>
+           {/* Right Bottom Controls - Empty space for now */}
+           <div className="pointer-events-none w-12 h-12" />
         </div>
 
       </ReactFlow>

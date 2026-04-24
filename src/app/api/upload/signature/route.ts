@@ -6,30 +6,38 @@ function utcDateString(date: Date) {
   return `${date.getUTCFullYear()}/${pad(date.getUTCMonth() + 1)}/${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}+00:00`;
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const authKey = process.env.TRANSLOADIT_KEY;
   const authSecret = process.env.TRANSLOADIT_SECRET;
+  
+  const { fileType } = await req.json().catch(() => ({ fileType: 'image' }));
 
   if (!authKey || !authSecret) {
-    // Graceful degradation for local development if keys are not set, return dummy
     return NextResponse.json({ signature: "dev_signature", params: "{}" });
   }
 
   const expires = new Date();
-  expires.setHours(expires.getHours() + 1); // 1 hour expiry
+  expires.setHours(expires.getHours() + 2); 
   
+  const steps: any = {
+    "processed": {
+      robot: "/file/filter",
+      use: ":original",
+      result: true
+    }
+  };
+
   const params = JSON.stringify({
     auth: {
       key: authKey,
       expires: utcDateString(expires),
     },
+    steps
   });
 
-  // Transloadit signature generation using sha384
-  const signature = crypto
-    .createHmac('sha384', authSecret)
-    .update(Buffer.from(params, 'utf-8'))
-    .digest('hex');
+  const hmac = crypto.createHmac('sha384', authSecret);
+  hmac.update(Buffer.from(params, 'utf-8'));
+  const signature = `sha384:${hmac.digest('hex')}`;
 
   return NextResponse.json({ signature, params });
 }

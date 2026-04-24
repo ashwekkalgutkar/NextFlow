@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { PanelLeft, MoreHorizontal, LogOut, Settings, CreditCard, BarChart2, Plus, ArrowUpRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useClerk } from '@clerk/nextjs';
 
 export default function Sidebar() {
@@ -12,6 +12,7 @@ export default function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
   const { openSignIn, user, signOut } = useClerk();
 
   const NavItem = ({ name, iconNode, active, href, dimText }: {
@@ -206,7 +207,7 @@ export default function Sidebar() {
                 ))}
                 <div
                   className="px-3 py-2 rounded flex items-center gap-3 cursor-pointer mx-1 mb-1"
-                  onClick={() => signOut()}
+                  onClick={() => signOut(() => router.push('/sign-in'))}
                 >
                   <LogOut size={14} className="ml-1" style={{ color: 'var(--text-dim)' }} /> Log out
                 </div>

@@ -24,7 +24,7 @@ function Badge({ children, status }: { children: React.ReactNode, status: string
 }
 
 export default function HistorySidebar() {
-  const { workflowRuns } = useWorkflowStore();
+  const { workflowRuns, refreshHistory, activeWorkflowId, runningNodes } = useWorkflowStore();
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
 
   const toggleRun = (runId: string) => {
@@ -33,6 +33,21 @@ export default function HistorySidebar() {
     else next.add(runId);
     setExpandedRuns(next);
   };
+
+  React.useEffect(() => {
+    if (activeWorkflowId) {
+      refreshHistory(activeWorkflowId);
+    }
+  }, [activeWorkflowId, refreshHistory]);
+
+  React.useEffect(() => {
+    if (activeWorkflowId && runningNodes.size > 0) {
+      const interval = setInterval(() => {
+        refreshHistory(activeWorkflowId);
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [activeWorkflowId, runningNodes.size, refreshHistory]);
 
   if (workflowRuns.length === 0) {
     return (

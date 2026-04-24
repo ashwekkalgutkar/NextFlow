@@ -1,42 +1,28 @@
-import { NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
-import { PrismaClient } from '@prisma/client';
+import { runs } from '@trigger.dev/sdk/v3';
 
-const prisma = new PrismaClient();
+export async function GET(req: Request, { params }: { params: Promise<{ runId: string }> | { runId: string } }) {
+  try {
+    const resolvedParams = await Promise.resolve(params);
+    const runId = resolvedParams.runId;
 
-export async function GET(req: Request, { params }: { params: Promise<{ runId: string }> }) {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) return new NextResponse("Unauthorized", { status: 401 });
-
-  const user = await prisma.user.findUnique({ where: { clerkId } });
-  if (!user) return new NextResponse("Not Found", { status: 404 });
-
-  const { runId } = await params;
-
-  const run = await prisma.workflowRun.findUnique({
-    where: { id: runId },
-    include: {
-      nodeRuns: true,
-      workflow: true
+    if (!runId || runId === 'undefined') {
+      return Response.json({ error: 'Invalid runId' }, { status: 400 });
     }
-  });
 
-  if (!run) return new NextResponse("Not Found", { status: 404 });
-  if (run.workflow.userId !== user.id) {
-    return new NextResponse("Forbidden", { status: 403 });
+    const run = await runs.retrieve(runId);
+
+    let output = null;
+    if (run.status === 'COMPLETED') {
+      output = run.output?.output || run.output?.outputUrl || run.output;
+    }
+
+    return Response.json({
+      status: run.status,  // PENDING, EXECUTING, COMPLETED, FAILED
+      output,
+      error: run.status === 'FAILED' ? 'Execution failed' : null
+    });
+  } catch (error: any) {
+    console.error('Execute Status Error:', error);
+    return Response.json({ error: 'Failed to retrieve status' }, { status: 500 });
   }
-
-  const nodeStatuses = run.nodeRuns.reduce((acc: any, curr) => {
-    acc[curr.nodeId] = {
-      status: curr.status,
-      output: curr.output,
-      errorMessage: curr.errorMessage
-    };
-    return acc;
-  }, {});
-
-  return NextResponse.json({
-    status: run.status,
-    nodeStatuses
-  });
 }

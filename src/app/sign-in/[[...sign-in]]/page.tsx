@@ -10,7 +10,10 @@ export default function SignInPage() {
         {/* Left Side: Clerk Sign In */}
         <div className="w-full md:w-1/2 p-8 md:p-12 flex flex-col justify-center relative">
           <div className="w-full max-w-[340px] mx-auto">
-            <h1 className="text-[32px] font-bold text-black mb-8 text-center tracking-tight">Welcome back</h1>
+            <div className="flex justify-center mb-8">
+              <img src="https://plain-apac-prod-public.komododecks.com/202604/23/KVDPGqHxpZk38VsRrw63/image.png" alt="NextFlow" className="h-10 w-auto" />
+            </div>
+            <h1 className="text-[24px] font-bold text-black mb-6 text-center tracking-tight">Welcome back</h1>
             
             <SignIn 
               appearance={{

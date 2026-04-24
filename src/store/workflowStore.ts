@@ -10,9 +10,7 @@ import {
   NodeChange,
   EdgeChange
 } from '@xyflow/react';
-
-// For brevity, we type WorkflowRun as any here, will be defined with Prisma
-type WorkflowRun = any;
+import { saveWorkflow, loadWorkflow as dbLoadWorkflow, deleteWorkflow as dbDeleteWorkflow, fetchHistory } from '@/app/actions/workflowActions';
 
 export interface SavedWorkflow {
   id: string;
@@ -34,7 +32,7 @@ interface WorkflowState {
   nodeErrors: Record<string, string>;
 
   // History & Storage
-  workflowRuns: WorkflowRun[];
+  workflowRuns: any[];
   savedWorkflows: SavedWorkflow[];
 
   // Undo/redo
@@ -62,33 +60,23 @@ interface WorkflowState {
   pushHistory: () => void;
 
   // Multi-workflow management
-  saveCurrentWorkflow: (id: string) => void;
-  loadWorkflow: (id: string) => void;
-  deleteWorkflow: (id: string) => void;
+  saveCurrentWorkflow: (id: string) => Promise<void>;
+  loadWorkflow: (id: string) => Promise<any>;
+  deleteWorkflow: (id: string) => Promise<void>;
   renameWorkflow: (id: string, name: string) => void;
   getWorkflowName: (id: string) => string;
+  getNodeInputs: (nodeId: string) => Record<string, any>;
+  refreshHistory: (workflowId: string) => Promise<void>;
+  
+  activeWorkflowId: string | null;
+  setActiveWorkflowId: (id: string | null) => void;
 }
-
-const defaultNodes = [
-  { id: 'img-1', type: 'imageUploadNode', position: { x: 50, y: 100 }, data: { label: 'PRODUCT IMAGE' } },
-  { id: 'crop-1', type: 'cropImageNode', position: { x: 350, y: 100 }, data: { label: 'CROP SUBJECT' } },
-  { id: 'vid-1', type: 'videoUploadNode', position: { x: 50, y: 350 }, data: { label: 'B-ROLL VIDEO' } },
-  { id: 'frame-1', type: 'extractFrameNode', position: { x: 350, y: 350 }, data: { label: 'EXTRACT KEYFRAME' } },
-  { id: 'llm-1', type: 'llmNode', position: { x: 750, y: 225 }, data: { label: 'MARKETING KIT GEN', model: 'gemini-2.0-flash-exp', system_prompt: 'You are an expert marketing copywriter. Use the provided product image and b-roll keyframe to generate an ad campaign.', user_message: 'Generate 3 twitter captions and 1 instagram post description for this product.' } }
-];
-
-const defaultEdges = [
-  { id: 'e-img1-crop1', source: 'img-1', sourceHandle: 'image_url', target: 'crop-1', targetHandle: 'image_url', animated: true, className: 'animated custom-edge' },
-  { id: 'e-crop1-llm1', source: 'crop-1', sourceHandle: 'image_url', target: 'llm-1', targetHandle: 'images', animated: true, className: 'animated custom-edge' },
-  { id: 'e-vid1-frame1', source: 'vid-1', sourceHandle: 'video_url', target: 'frame-1', targetHandle: 'video_url', animated: true, className: 'animated custom-edge' },
-  { id: 'e-frame1-llm1', source: 'frame-1', sourceHandle: 'image_url', target: 'llm-1', targetHandle: 'images', animated: true, className: 'animated custom-edge' }
-];
 
 export const useWorkflowStore = create<WorkflowState>()(
   persist(
     (set, get) => ({
-      nodes: defaultNodes,
-      edges: defaultEdges,
+      nodes: [],
+      edges: [],
       selectedNodes: [],
 
       runningNodes: new Set(),
@@ -97,8 +85,19 @@ export const useWorkflowStore = create<WorkflowState>()(
       workflowRuns: [],
       savedWorkflows: [],
 
-      history: [{ nodes: defaultNodes, edges: defaultEdges }],
+      history: [{ nodes: [], edges: [] }],
       historyIndex: 0,
+      
+      activeWorkflowId: null,
+      setActiveWorkflowId: (id) => set({ 
+        activeWorkflowId: id, 
+        nodes: [], 
+        edges: [], 
+        nodeOutputs: {}, 
+        nodeErrors: {},
+        history: [{ nodes: [], edges: [] }],
+        historyIndex: 0
+      }),
 
       pushHistory: () => {
         const { nodes, edges, history, historyIndex } = get();
@@ -145,8 +144,16 @@ export const useWorkflowStore = create<WorkflowState>()(
         set({ edges: get().edges.filter(e => e.id !== id) });
       },
 
-      setNodes: (nodes) => set({ nodes }),
-      setEdges: (edges) => set({ edges }),
+      setNodes: (nodes) => {
+        const uniqueNodes = Array.from(new Map(nodes.map(n => [n.id, n])).values());
+        set({ nodes: uniqueNodes });
+      },
+      
+      setEdges: (edges) => {
+        const uniqueEdges = Array.from(new Map(edges.map(e => [e.id, e])).values());
+        set({ edges: uniqueEdges });
+      },
+      
       setSelectedNodes: (selectedNodes) => set({ selectedNodes }),
 
       setRunning: (nodeId, running) => {
@@ -188,46 +195,81 @@ export const useWorkflowStore = create<WorkflowState>()(
         }
       },
 
-      // Multi-workflow management implementations
-      saveCurrentWorkflow: (id: string) => {
+      saveCurrentWorkflow: async (id: string) => {
         const { nodes, edges, savedWorkflows } = get();
+        const name = get().getWorkflowName(id);
         
-        const existingIndex = savedWorkflows.findIndex(w => w.id === id);
-        if (existingIndex !== -1) {
-          const updated = [...savedWorkflows];
-          updated[existingIndex] = { ...updated[existingIndex], updatedAt: Date.now(), nodes, edges };
-          set({ savedWorkflows: updated });
-        } else {
-          const newWorkflow: SavedWorkflow = {
-            id,
-            name: "Untitled",
-            updatedAt: Date.now(),
-            nodes,
-            edges
-          };
-          set({ savedWorkflows: [newWorkflow, ...savedWorkflows] });
+        try {
+          await saveWorkflow(id, nodes, edges, name);
+          
+          const existingIndex = savedWorkflows.findIndex(w => w.id === id);
+          if (existingIndex !== -1) {
+            const updated = [...savedWorkflows];
+            updated[existingIndex] = { ...updated[existingIndex], updatedAt: Date.now(), nodes, edges };
+            set({ savedWorkflows: updated });
+          } else {
+            const newWorkflow: SavedWorkflow = {
+              id,
+              name: name || "Untitled",
+              updatedAt: Date.now(),
+              nodes,
+              edges
+            };
+            set({ savedWorkflows: [newWorkflow, ...savedWorkflows] });
+          }
+        } catch (error) {
+          console.error('Failed to save workflow:', error);
         }
       },
 
-      loadWorkflow: (id: string) => {
-        const { savedWorkflows } = get();
-        const found = savedWorkflows.find(w => w.id === id);
-        if (found) {
+      loadWorkflow: async (id: string) => {
+        try {
+          const workflow = await dbLoadWorkflow(id);
+          if (workflow) {
+            const uniqueNodes = Array.from(new Map((workflow.nodes || []).map((n: any) => [n.id, n])).values()) as Node[];
+            const uniqueEdges = Array.from(new Map((workflow.edges || []).map((e: any) => [e.id, e])).values()) as Edge[];
+
+            set({ 
+              nodes: uniqueNodes, 
+              edges: uniqueEdges,
+              history: [{ nodes: uniqueNodes, edges: uniqueEdges }],
+              historyIndex: 0,
+              nodeOutputs: {},
+              nodeErrors: {}
+            });
+            
+            const { savedWorkflows } = get();
+            if (!savedWorkflows.find(w => w.id === id)) {
+               set({ savedWorkflows: [{ id, name: workflow.name || "Untitled", updatedAt: Date.now(), nodes: workflow.nodes || [], edges: workflow.edges || [] }, ...savedWorkflows] });
+            }
+            return workflow;
+          }
+          
+          // CRITICAL: Reset state for new workflow ID
           set({ 
-            nodes: found.nodes || [], 
-            edges: found.edges || [],
-            history: [{ nodes: found.nodes || [], edges: found.edges || [] }],
-            historyIndex: 0
+            nodes: [], 
+            edges: [], 
+            history: [{ nodes: [], edges: [] }], 
+            historyIndex: 0,
+            nodeOutputs: {},
+            nodeErrors: {}
           });
-        } else {
-          // Reset to default blank state for new workflows
-          set({ nodes: [], edges: [], history: [{ nodes: [], edges: [] }], historyIndex: 0 });
+          return null;
+        } catch (error) {
+          console.error('Failed to load workflow:', error);
+          set({ nodes: [], edges: [], history: [{ nodes: [], edges: [] }], historyIndex: 0, nodeOutputs: {}, nodeErrors: {} });
+          return null;
         }
       },
 
-      deleteWorkflow: (id: string) => {
-        const { savedWorkflows } = get();
-        set({ savedWorkflows: savedWorkflows.filter(w => w.id !== id) });
+      deleteWorkflow: async (id: string) => {
+        try {
+          await dbDeleteWorkflow(id);
+          const { savedWorkflows } = get();
+          set({ savedWorkflows: savedWorkflows.filter(w => w.id !== id) });
+        } catch (error) {
+          console.error('Failed to delete workflow:', error);
+        }
       },
 
       renameWorkflow: (id: string, name: string) => {
@@ -237,12 +279,47 @@ export const useWorkflowStore = create<WorkflowState>()(
           const updated = [...savedWorkflows];
           updated[idx] = { ...updated[idx], name: name.trim() || 'Untitled', updatedAt: Date.now() };
           set({ savedWorkflows: updated });
+          get().saveCurrentWorkflow(id);
         }
       },
 
       getWorkflowName: (id: string) => {
         const { savedWorkflows } = get();
         return savedWorkflows.find(w => w.id === id)?.name ?? 'Untitled';
+      },
+
+      getNodeInputs: (nodeId: string) => {
+        const { nodes, edges, nodeOutputs } = get();
+        const incomingEdges = edges.filter(e => e.target === nodeId);
+        
+        const connectedInputs: Record<string, any> = {};
+        for (const edge of incomingEdges) {
+          const sourceOutput = nodeOutputs[edge.source];
+          if (sourceOutput !== undefined) {
+            if (edge.targetHandle === 'images') {
+              connectedInputs['images'] = connectedInputs['images'] || [];
+              if (Array.isArray(sourceOutput)) {
+                connectedInputs['images'].push(...sourceOutput);
+              } else if (sourceOutput.url) {
+                connectedInputs['images'].push(sourceOutput.url);
+              } else if (typeof sourceOutput === 'string') {
+                connectedInputs['images'].push(sourceOutput);
+              }
+            } else {
+              connectedInputs[edge.targetHandle!] = sourceOutput.url || sourceOutput;
+            }
+          }
+        }
+        return connectedInputs;
+      },
+
+      refreshHistory: async (workflowId: string) => {
+        try {
+          const runs = await fetchHistory(workflowId);
+          set({ workflowRuns: runs });
+        } catch (error) {
+          console.error('Failed to load history:', error);
+        }
       },
 
     }),

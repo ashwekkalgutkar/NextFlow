@@ -10,6 +10,12 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "NextFlow - Nodes Editor",
   description: "Pixel-Perfect Krea Nodes Clone",
+  icons: {
+    icon: [
+      { url: "https://plain-apac-prod-public.komododecks.com/202604/23/TsmJGprgy6IEM9moJhsX/image.png", media: "(prefers-color-scheme: light)" },
+      { url: "https://plain-apac-prod-public.komododecks.com/202604/23/KVDPGqHxpZk38VsRrw63/image.png", media: "(prefers-color-scheme: dark)" },
+    ],
+  },
 };
 
 export default function RootLayout({
@@ -36,6 +42,11 @@ export default function RootLayout({
               `,
             }}
           />
+          {/* Direct link tags for favicon to ensure immediate updates */}
+          <link rel="icon" href="https://plain-apac-prod-public.komododecks.com/202604/23/TsmJGprgy6IEM9moJhsX/image.png" media="(prefers-color-scheme: light)" />
+          <link rel="icon" href="https://plain-apac-prod-public.komododecks.com/202604/23/KVDPGqHxpZk38VsRrw63/image.png" media="(prefers-color-scheme: dark)" />
+          {/* Fallback for manual theme switching (browsers will pick the first one) */}
+          <link rel="icon" href="https://plain-apac-prod-public.komododecks.com/202604/23/KVDPGqHxpZk38VsRrw63/image.png" />
         </head>
         <body className={inter.className} suppressHydrationWarning>
           <ThemeProvider>

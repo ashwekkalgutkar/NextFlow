@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import { useTheme } from "@/components/ui/ThemeProvider";
 
 export interface Preset {
   id: string;
@@ -52,6 +53,7 @@ export default function PresetsModal({
   onSelectPreset,
 }: PresetsModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
 
   useEffect(() => {
     if (!open) return;
@@ -79,7 +81,6 @@ export default function PresetsModal({
       }}
     >
       {/* Dialog */}
-
       <div 
         className="relative w-full max-w-7xl max-h-[90vh] rounded-[24px] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
         style={{ background: 'var(--bg-sidebar)', border: '1px solid var(--border-subtle)' }}
@@ -102,40 +103,45 @@ export default function PresetsModal({
         {/* Modal Content - Grid */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
-            {PRESETS.map((preset) => (
-              <div key={preset.id} className="flex flex-col gap-4">
-                <button 
-                  onClick={() => {
-                    onSelectPreset?.(preset);
-                    onClose();
-                  }}
-                  className="group relative flex aspect-[3/2] w-full items-center justify-center rounded-[12px] bg-cover bg-center shadow-lg transition-all duration-300 ease-out hover:scale-[1.03] hover:shadow-2xl overflow-hidden active:scale-[0.98]"
-                  style={{ 
-                     backgroundImage: `url(${preset.image})`,
-                     border: '1px solid var(--border-mid)'
-                  }}
-                >
-                  {/* Dark gradient overlay on hover */}
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                  
-                  {/* Pro Badge */}
-                  {preset.isPro && (
-                    <div className="absolute top-3 right-3 bg-black/40 backdrop-blur-md border border-white/20 px-2 py-0.5 rounded-[4px] flex items-center gap-1">
-                      <span className="text-[10px] font-bold text-white uppercase tracking-wider">Pro</span>
-                    </div>
-                  )}
-                </button>
+            {PRESETS.map((preset) => {
+              // Dynamically adjust the image URL based on theme
+              const themedImage = preset.image.replace('-dark.png', `-${theme}.png`);
+              
+              return (
+                <div key={preset.id} className="flex flex-col gap-4">
+                  <button 
+                    onClick={() => {
+                      onSelectPreset?.({ ...preset, image: themedImage });
+                      onClose();
+                    }}
+                    className="group relative flex aspect-[3/2] w-full items-center justify-center rounded-[12px] bg-cover bg-center shadow-lg transition-all duration-300 ease-out hover:scale-[1.03] hover:shadow-2xl overflow-hidden active:scale-[0.98]"
+                    style={{ 
+                       backgroundImage: `url(${themedImage})`,
+                       border: '1px solid var(--border-mid)'
+                    }}
+                  >
+                    {/* Dark gradient overlay on hover */}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
+                    
+                    {/* Pro Badge */}
+                    {preset.isPro && (
+                      <div className="absolute top-3 right-3 bg-black/40 backdrop-blur-md border border-white/20 px-2 py-0.5 rounded-[4px] flex items-center gap-1">
+                        <span className="text-[10px] font-bold text-white uppercase tracking-wider">Pro</span>
+                      </div>
+                    )}
+                  </button>
 
-                <div className="flex flex-col px-1">
-                  <h3 className="flex items-center gap-2 text-[17px] font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {preset.title}
-                  </h3>
-                  <p className="text-[13px] leading-relaxed mt-1" style={{ color: 'var(--text-muted)' }}>
-                    {preset.description}
-                  </p>
+                  <div className="flex flex-col px-1">
+                    <h3 className="flex items-center gap-2 text-[17px] font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {preset.title}
+                    </h3>
+                    <p className="text-[13px] leading-relaxed mt-1" style={{ color: 'var(--text-muted)' }}>
+                      {preset.description}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

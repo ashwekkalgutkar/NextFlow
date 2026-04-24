@@ -38,7 +38,7 @@ export default function NodesPage() {
   
   useEffect(() => {
     if (user?.id) {
-      fetchWorkflows(user.id).then((dbWorkflows) => {
+      fetchWorkflows().then((dbWorkflows) => {
         const formatted = dbWorkflows.map(wf => ({
           id: wf.id,
           name: wf.name,
